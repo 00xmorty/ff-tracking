@@ -1,0 +1,13 @@
+name: probe
+on:
+  push:
+    branches: [usta/g2-probe]
+jobs:
+  p:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15, macos-latest, macos-14-large, macos-15-intel, macos-13]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - run: uname -a; sysctl -n machdep.cpu.brand_string; sw_vers; which rustc ffmpeg python3 uv; system_profiler SPDisplaysDataType | head -8
