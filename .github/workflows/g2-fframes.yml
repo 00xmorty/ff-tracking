@@ -1,0 +1,85 @@
+# GEÇİCİ (G2): fframes 1.2.0 (şimdiki) ile 1.4.0'ı aynı runner'da karşılaştırır.
+# Merge edilmez.
+name: g2-fframes
+on:
+  push:
+    branches: [usta/g2-fframes-1.4]
+  workflow_dispatch:
+
+jobs:
+  render:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-24.04]
+        fframes: ["1.2.0", "1.4.0"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    env:
+      TSV: ${{ github.workspace }}/../g2-timing.tsv
+      FF_VER: ${{ matrix.fframes }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bağımlılıklar
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get update -qq
+            sudo apt install -y build-essential pkg-config libclang-dev libfontconfig1-dev libgl1-mesa-dev libvulkan1 ffmpeg
+          else
+            command -v ffmpeg >/dev/null || brew install ffmpeg
+          fi
+          python3 -c 'import numpy, scipy' 2>/dev/null || python3 -m pip install numpy scipy 2>&1 | tail -1
+          python3 -c 'import numpy, scipy' 2>/dev/null || python3 -m pip install --break-system-packages numpy scipy 2>&1 | tail -1
+      - name: fframes sürümünü ayarla
+        run: |
+          sed -i.bak "s/=1\.2\.0/=$FF_VER/g" Cargo.toml
+          grep -n fframes Cargo.toml
+      - name: Derle
+        run: |
+          set +e
+          s=$(date +%s)
+          cargo build --release -p hud -p flat -p lens 2>&1 | tail -60
+          rc=${PIPESTATUS[0]}
+          printf 'build\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
+          exit 0
+      - name: Render (render.sh)
+        run: |
+          set +e
+          s=$(date +%s)
+          [ "$RUNNER_OS" = Linux ] && export FF_BACKEND=cpu
+          tools/render.sh 2>&1 | tee render.log | tail -40
+          rc=${PIPESTATUS[0]}
+          printf 'render\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
+          exit 0
+      - name: Kare 81
+        run: |
+          set +e
+          [ "$RUNNER_OS" = Linux ] && export FF_BACKEND=cpu
+          mkdir -p frames
+          s=$(date +%s)
+          target/release/lens frame 81 -o frames 2>&1 | tail -10
+          rc=${PIPESTATUS[0]}
+          printf 'kare81\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
+          ls -l frames out/tracking.mp4
+          ffprobe -v error -show_entries stream=codec_type,width,height,nb_frames,duration -of compact out/tracking.mp4 | tee probe.txt
+          exit 0
+      - name: Özet
+        if: always()
+        run: |
+          {
+            echo "## ${{ matrix.os }} / fframes ${{ matrix.fframes }}"
+            echo '| adım | çıkış | süre (s) |'; echo '|---|---|---|'
+            awk -F'\t' '{printf "| %s | %s | %s |\n",$1,$2,$3}' "$TSV"
+            echo '```'; cat probe.txt; echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          cp "$TSV" timing.tsv || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: f-${{ matrix.os }}-${{ matrix.fframes }}
+          path: |
+            frames/
+            timing.tsv
+            probe.txt
+            render.log
+          if-no-files-found: ignore
