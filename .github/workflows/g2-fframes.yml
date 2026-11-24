@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-24.04]
+        os: [ubuntu-24.04]
         fframes: ["1.2.0", "1.4.0"]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
@@ -24,12 +24,12 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
             sudo apt-get update -qq
-            sudo apt install -y build-essential pkg-config libclang-dev libfontconfig1-dev libgl1-mesa-dev libvulkan1 ffmpeg
+            sudo apt install -y build-essential pkg-config libclang-dev libfontconfig1-dev libgl1-mesa-dev libvulkan1 ffmpeg libasound2-dev
           else
             command -v ffmpeg >/dev/null || brew install ffmpeg
           fi
-          python3 -c 'import numpy, scipy' 2>/dev/null || python3 -m pip install numpy scipy 2>&1 | tail -1
-          python3 -c 'import numpy, scipy' 2>/dev/null || python3 -m pip install --break-system-packages numpy scipy 2>&1 | tail -1
+          python3 -m venv "$RUNNER_TEMP/v" && "$RUNNER_TEMP/v/bin/pip" install numpy scipy 2>&1 | tail -1
+          echo "PYTHON=$RUNNER_TEMP/v/bin/python" >> "$GITHUB_ENV"
       - name: fframes sürümünü ayarla
         run: |
           sed -i.bak "s/=1\.2\.0/=$FF_VER/g" Cargo.toml
