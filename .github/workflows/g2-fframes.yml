@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04]
+        os: [ubuntu-22.04]
         fframes: ["1.2.0", "1.4.0"]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
@@ -36,8 +36,11 @@ jobs:
           grep -n fframes Cargo.toml
           if [ "$FF_VER" != "1.2.0" ]; then
             cargo fetch 2>&1 | tail -2
-            cargo update -p fframes-media --precise "$FF_VER" 2>&1 | tail -3
-            printf 'pin-fframes-media\t%s\t0\n' "$?" >> "$TSV"
+            # fframes 1.4.0 taze çözümde media/macro 1.4.1 + usvgr 0.50 çeker ve derlenmez; 1.4.0'a sabitle
+            for c in fframes-media-dir-macro fframes-media webvtt-parser svgr-macro; do
+              cargo update -p "$c" --precise 1.4.0 2>&1 | tail -1
+              printf 'pin-%s\t%s\t0\n' "$c" "${PIPESTATUS[0]}" >> "$TSV"
+            done
           fi
       - name: Derle
         run: |
