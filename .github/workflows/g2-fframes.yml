@@ -24,7 +24,7 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
             sudo apt-get update -qq
-            sudo apt install -y build-essential pkg-config libclang-dev libfontconfig1-dev libgl1-mesa-dev libvulkan1 ffmpeg libasound2-dev
+            sudo apt install -y build-essential pkg-config libclang-dev libfontconfig1-dev libgl1-mesa-dev libvulkan1 ffmpeg libasound2-dev libx264-dev
           else
             command -v ffmpeg >/dev/null || brew install ffmpeg
           fi
