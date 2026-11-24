@@ -62,19 +62,27 @@ jobs:
           printf 'render-birebir\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
           exit 0
 
-      - name: "4. Birebir başarısızsa numpy/scipy kur, FF_BACKEND=cpu ile yeniden"
+      - name: "4. Düzeltmelerle yeniden (libasound2-dev, venv numpy/scipy, FF_BACKEND=cpu)"
         run: |
           set +e
           [ -f out/tracking.mp4 ] && { echo "birebir render çıktı verdi, atlandı"; exit 0; }
-          python3 -m pip install numpy scipy 2>&1 | tail -3
-          if ! python3 -c 'import numpy' 2>/dev/null; then
-            python3 -m pip install --break-system-packages numpy scipy 2>&1 | tail -3
-            printf 'pip-break-system\t0\t0\n' >> "$TSV"
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt install -y libasound2-dev 2>&1 | tail -2
+            printf 'fix-apt-libasound2-dev\t0\t0\n' >> "$TSV"
           fi
           s=$(date +%s)
-          FF_BACKEND=cpu tools/render.sh 2>&1 | tee render2.log | tail -40
+          python3 -m venv "$RUNNER_TEMP/v" && "$RUNNER_TEMP/v/bin/pip" install numpy scipy 2>&1 | tail -1
+          printf 'fix-venv-numpy-scipy\t%s\t%s\n' "$?" "$(( $(date +%s) - s ))" >> "$TSV"
+          export PYTHON="$RUNNER_TEMP/v/bin/python"
+          s=$(date +%s)
+          cargo build --release -p hud -p flat -p lens 2>&1 | tail -30
           rc=${PIPESTATUS[0]}
-          printf 'render-cpu-yeniden\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
+          printf 'build-duzeltmeli\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
+          s=$(date +%s)
+          [ "$RUNNER_OS" = Linux ] && export FF_BACKEND=cpu
+          tools/render.sh 2>&1 | tee render2.log | tail -40
+          rc=${PIPESTATUS[0]}
+          printf 'render-duzeltmeli-build-sonrasi\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
           exit 0
 
       - name: 5. Çıktı doğrulama (ffprobe)
