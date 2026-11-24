@@ -62,7 +62,7 @@ jobs:
           printf 'render-birebir\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
           exit 0
 
-      - name: 4. Birebir başarısızsa: numpy/scipy kur, FF_BACKEND=cpu ile yeniden
+      - name: "4. Birebir başarısızsa numpy/scipy kur, FF_BACKEND=cpu ile yeniden"
         run: |
           set +e
           [ -f out/tracking.mp4 ] && { echo "birebir render çıktı verdi, atlandı"; exit 0; }
