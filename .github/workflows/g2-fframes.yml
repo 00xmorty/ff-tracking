@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04]
+        os: [ubuntu-22.04]
         fframes: ["1.2.0", "1.4.0"]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
@@ -34,6 +34,11 @@ jobs:
         run: |
           sed -i.bak "s/=1\.2\.0/=$FF_VER/g" Cargo.toml
           grep -n fframes Cargo.toml
+          if [ "$FF_VER" != "1.2.0" ]; then
+            cargo fetch 2>&1 | tail -2
+            cargo update -p fframes-media --precise "$FF_VER" 2>&1 | tail -3
+            printf 'pin-fframes-media\t%s\t0\n' "$?" >> "$TSV"
+          fi
       - name: Derle
         run: |
           set +e
