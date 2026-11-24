@@ -1,0 +1,111 @@
+# GEÇİCİ (G2 sürtünme denetimi): README adımlarını temiz runner'da birebir koşar.
+# Merge edilmez; denetimden sonra dal silinir.
+name: g2-surtunme
+on:
+  push:
+    branches: [usta/g2-surtunme-denetimi]
+  workflow_dispatch:
+
+jobs:
+  readme:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      TSV: ${{ github.workspace }}/../g2-timing.tsv
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 0. Temiz makine durumu (README'nin saydığı araçlar)
+        run: |
+          set +e
+          uname -a
+          for t in rustc cargo ffmpeg ffprobe python3 uv pkg-config nasm ninja; do
+            printf '%-10s ' "$t"; (command -v "$t" && "$t" --version 2>&1 | head -1) || echo "YOK"
+          done
+          python3 -c 'import numpy, scipy; print("numpy/scipy var")' 2>&1 | tail -1
+          nproc 2>/dev/null || sysctl -n hw.ncpu
+          df -h / | tail -1
+
+      - name: 1. README bağımlılıkları (apt satırı / macOS için brew)
+        run: |
+          set +e
+          s=$(date +%s)
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get update -qq
+            sudo apt install -y build-essential pkg-config libclang-dev libfontconfig1-dev libgl1-mesa-dev libvulkan1 ffmpeg
+          else
+            command -v ffmpeg >/dev/null || brew install ffmpeg
+          fi
+          rc=$?
+          printf 'deps\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
+          exit 0
+
+      - name: 2. İlk derleme (render.sh'nin cargo build adımı)
+        run: |
+          set +e
+          s=$(date +%s)
+          cargo build --release -p hud -p flat -p lens 2>&1 | tail -40
+          rc=${PIPESTATUS[0]}
+          printf 'build\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
+          exit 0
+
+      - name: 3. README render komutu birebir (tools/render.sh, ek ayar yok)
+        run: |
+          set +e
+          s=$(date +%s)
+          tools/render.sh 2>&1 | tee render1.log | tail -40
+          rc=${PIPESTATUS[0]}
+          printf 'render-birebir\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
+          exit 0
+
+      - name: 4. Birebir başarısızsa: numpy/scipy kur, FF_BACKEND=cpu ile yeniden
+        run: |
+          set +e
+          [ -f out/tracking.mp4 ] && { echo "birebir render çıktı verdi, atlandı"; exit 0; }
+          python3 -m pip install numpy scipy 2>&1 | tail -3
+          if ! python3 -c 'import numpy' 2>/dev/null; then
+            python3 -m pip install --break-system-packages numpy scipy 2>&1 | tail -3
+            printf 'pip-break-system\t0\t0\n' >> "$TSV"
+          fi
+          s=$(date +%s)
+          FF_BACKEND=cpu tools/render.sh 2>&1 | tee render2.log | tail -40
+          rc=${PIPESTATUS[0]}
+          printf 'render-cpu-yeniden\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
+          exit 0
+
+      - name: 5. Çıktı doğrulama (ffprobe)
+        run: |
+          set +e
+          if [ -f out/tracking.mp4 ]; then
+            ffprobe -v error -show_entries stream=codec_type,width,height,nb_frames,duration -of compact out/tracking.mp4 | tee probe.txt
+            ls -l out/tracking.mp4
+          else
+            echo "out/tracking.mp4 YOK" | tee probe.txt
+          fi
+          exit 0
+
+      - name: Özet
+        if: always()
+        run: |
+          {
+            echo "## ${{ matrix.os }}"
+            echo '| adım | çıkış | süre (s) |'; echo '|---|---|---|'
+            awk -F'\t' '{printf "| %s | %s | %s |\n",$1,$2,$3}' "$TSV"
+            echo; echo '```'; cat probe.txt; echo '```'
+            echo "backend satırları:"; echo '```'; grep -hi 'backend' render1.log render2.log 2>/dev/null | head -5; echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: g2-${{ matrix.os }}
+          path: |
+            render1.log
+            render2.log
+            probe.txt
+            out/tracking.mp4
+          if-no-files-found: ignore
