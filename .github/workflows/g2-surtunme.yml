@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-24.04]
+        os: [ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     env:
@@ -62,22 +62,29 @@ jobs:
           printf 'render-birebir\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
           exit 0
 
-      - name: "4. Düzeltmelerle yeniden (libasound2-dev, venv numpy/scipy, FF_BACKEND=cpu)"
+      - name: "4. Düzeltmelerle yeniden (eksik paketler tek tek, venv numpy/scipy, FF_BACKEND=cpu)"
         run: |
           set +e
           [ -f out/tracking.mp4 ] && { echo "birebir render çıktı verdi, atlandı"; exit 0; }
-          if [ "$RUNNER_OS" = Linux ]; then
-            sudo apt install -y libasound2-dev 2>&1 | tail -2
-            printf 'fix-apt-libasound2-dev\t0\t0\n' >> "$TSV"
-          fi
           s=$(date +%s)
           python3 -m venv "$RUNNER_TEMP/v" && "$RUNNER_TEMP/v/bin/pip" install numpy scipy 2>&1 | tail -1
           printf 'fix-venv-numpy-scipy\t%s\t%s\n' "$?" "$(( $(date +%s) - s ))" >> "$TSV"
           export PYTHON="$RUNNER_TEMP/v/bin/python"
-          s=$(date +%s)
-          cargo build --release -p hud -p flat -p lens 2>&1 | tail -30
-          rc=${PIPESTATUS[0]}
-          printf 'build-duzeltmeli\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
+          ok=1
+          for pkg in "" libasound2-dev libx264-dev nasm; do
+            if [ -n "$pkg" ]; then
+              [ "$RUNNER_OS" = Linux ] || break
+              sudo apt install -y "$pkg" 2>&1 | tail -1
+              printf 'fix-apt-%s\t0\t0\n' "$pkg" >> "$TSV"
+            fi
+            s=$(date +%s)
+            cargo build --release -p hud -p flat -p lens > build-$pkg.log 2>&1
+            rc=$?
+            tail -5 build-$pkg.log
+            printf 'build-sonrasi-%s\t%s\t%s\n' "${pkg:-baslangic}" "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
+            [ $rc -eq 0 ] && { ok=0; break; }
+          done
+          [ $ok -eq 0 ] || exit 0
           s=$(date +%s)
           [ "$RUNNER_OS" = Linux ] && export FF_BACKEND=cpu
           tools/render.sh 2>&1 | tee render2.log | tail -40
@@ -114,6 +121,7 @@ jobs:
           path: |
             render1.log
             render2.log
+            build-*.log
             probe.txt
             out/tracking.mp4
           if-no-files-found: ignore
