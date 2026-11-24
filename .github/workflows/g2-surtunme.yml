@@ -92,6 +92,32 @@ jobs:
           printf 'render-duzeltmeli-build-sonrasi\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
           exit 0
 
+      - name: "4b. Hala düşüyorsa: x264 build 163'ü kaynaktan kur (Ubuntu 24.04 apt'te 164 var)"
+        run: |
+          set +e
+          [ -f out/tracking.mp4 ] && { echo "render çıktı verdi, atlandı"; exit 0; }
+          [ "$RUNNER_OS" = Linux ] || exit 0
+          export PYTHON="$RUNNER_TEMP/v/bin/python"
+          s=$(date +%s)
+          git clone -q https://code.videolan.org/videolan/x264.git "$RUNNER_TEMP/x264" && cd "$RUNNER_TEMP/x264" \
+            && git checkout -q 5db6aa6cab1b146e07b60cc1736a01f21da01154 \
+            && grep -n "define X264_BUILD" x264.h \
+            && ./configure --prefix="$RUNNER_TEMP/x264-163" --enable-shared --enable-pic >/dev/null \
+            && make -j"$(nproc)" install >/dev/null
+          printf 'fix-x264-kaynaktan\t%s\t%s\n' "$?" "$(( $(date +%s) - s ))" >> "$TSV"
+          cd "$GITHUB_WORKSPACE"
+          export PKG_CONFIG_PATH="$RUNNER_TEMP/x264-163/lib/pkgconfig" LIBRARY_PATH="$RUNNER_TEMP/x264-163/lib" LD_LIBRARY_PATH="$RUNNER_TEMP/x264-163/lib" RUSTFLAGS="-L native=$RUNNER_TEMP/x264-163/lib"
+          s=$(date +%s)
+          cargo build --release -p hud -p flat -p lens > build-x264src.log 2>&1
+          rc=$?; tail -5 build-x264src.log
+          printf 'build-x264-kaynak-sonrasi\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
+          [ $rc -eq 0 ] || exit 0
+          s=$(date +%s)
+          FF_BACKEND=cpu tools/render.sh 2>&1 | tee render3.log | tail -30
+          rc=${PIPESTATUS[0]}
+          printf 'render-x264-kaynak\t%s\t%s\n' "$rc" "$(( $(date +%s) - s ))" >> "$TSV"
+          exit 0
+
       - name: 5. Çıktı doğrulama (ffprobe)
         run: |
           set +e
@@ -121,6 +147,7 @@ jobs:
           path: |
             render1.log
             render2.log
+            render3.log
             build-*.log
             probe.txt
             out/tracking.mp4
